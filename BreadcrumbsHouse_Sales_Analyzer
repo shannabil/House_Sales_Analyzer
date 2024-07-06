@@ -1,0 +1,298 @@
+import pandas as pd
+import numpy as np
+from scipy.stats import zscore
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+from statsmodels.tsa.seasonal import seasonal_decompose
+import ipywidgets as widgets
+from IPython.display import display, clear_output
+
+# Load dataset
+df = pd.read_csv('/content/Glasgow_House_Sales_1991-2013.csv')
+
+# Define UI components
+clean_data_button = widgets.Button(description="Clean Data")
+summary_statistics_button = widgets.Button(description="Summary Statistics")
+spatial_analysis_button = widgets.Button(description="Spatial Analysis")
+regression_analysis_button = widgets.Button(description="Regression Analysis")
+temporal_analysis_button = widgets.Button(description="Temporal Analysis")
+price_trend_analysis_button = widgets.Button(description="Price Trend Analysis")
+visualize_data_button = widgets.Button(description="Visualize Data")
+
+output = widgets.Output()
+
+# Define function to clean data
+def clean_data(b):
+    with output:
+        # Create a copy of the dataframe to work with
+        df_cleaned = df.copy()
+
+        # Handling missing data
+        df_cleaned.dropna(inplace=True)
+
+        # Handling duplicates
+        df_cleaned.drop_duplicates(inplace=True)
+
+        # Correcting data types if necessary
+        df_cleaned['ACTUAL_PRICE_AT_POINT_OF_SALE'] = pd.to_numeric(df_cleaned['ACTUAL_PRICE_AT_POINT_OF_SALE'], errors='coerce')
+
+        # Handling outliers using z-score analysis
+        df_cleaned['PRICE_ZSCORE'] = np.abs(zscore(df_cleaned['ACTUAL_PRICE_AT_POINT_OF_SALE']))
+        df_cleaned = df_cleaned[df_cleaned['PRICE_ZSCORE'] <= 3].copy()
+        df_cleaned.drop(columns=['PRICE_ZSCORE'], inplace=True)
+
+        # Save cleaned dataset to a new CSV file
+        cleaned_file_path = 'cleaned_Glasgow_House_Sales.csv'
+        df_cleaned.to_csv(cleaned_file_path, index=False)
+        print("Data cleaning and pre-processing completed. Cleaned dataset saved to:", cleaned_file_path)
+
+def display_summary_statistics(b):
+    output.clear_output()
+    with output:
+        print("Dataset Information:")
+        print(df.info())
+        print("\nSummary Statistics:")
+        print(df.describe())
+        summary_stats = df['ACTUAL_PRICE_AT_POINT_OF_SALE'].describe()
+        print("Summary Statistics of House Prices:")
+        print(summary_stats)
+        numeric_columns = ['YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE', 'RPI', 'DEFLATOR', 'PRICE_CONSTANT_AT_JULY_2013']
+        df[numeric_columns] = df[numeric_columns].apply(pd.to_numeric, errors='coerce')
+        df.dropna(subset=numeric_columns, inplace=True)
+        print("Data Types After Conversion:")
+        print(df[numeric_columns].dtypes)
+        print("\nCorrelation Analysis:")
+        correlation_matrix = df[numeric_columns].corr()
+        print(correlation_matrix)
+        mean_price_by_year = df.groupby('YEAR_OF_SALE__CALENDAR_')['ACTUAL_PRICE_AT_POINT_OF_SALE'].mean()
+        print("Mean Price of Houses by Year:")
+        print(mean_price_by_year)
+        class_counts = df['CLASS'].value_counts()
+        print("Value Counts of House Classes:")
+        print(class_counts)
+
+def spatial_analysis(b):
+    output.clear_output()
+    with output:
+        print("Dataset Information:")
+        print(df.info())
+        print("\nFirst few rows of the dataset:")
+        print(df.head())
+        print("\nSummary Statistics:")
+        print(df.describe())
+        print("\nUnique values in 'CLASS' column:")
+        print(df['CLASS'].unique())
+        print("\nValue at row 0, column 'STNO':")
+        print(df.at[0, 'STNO'])
+        print("\nValue counts of 'YEAR_OF_SALE__CALENDAR_' column:")
+        print(df['YEAR_OF_SALE__CALENDAR_'].value_counts())
+        if 'SHAPE' in df.columns:
+            print("\nSample geometry data:")
+            print(df['SHAPE'].head())
+        if 'STNAME' in df.columns:
+            mean_price_by_area = df.groupby('STNAME')['ACTUAL_PRICE_AT_POINT_OF_SALE'].mean()
+            print("\nMean Price by Area:")
+            print(mean_price_by_area)
+        sales_by_area = df.groupby('STNAME').size()
+        plt.figure(figsize=(12, 6))
+        sales_by_area.plot(kind='bar', color='skyblue')
+        plt.title('Number of House Sales by Area')
+        plt.xlabel('Area Name')
+        plt.ylabel('Number of Sales')
+        plt.grid(axis='y')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
+def regression_analysis(b):
+    output.clear_output()
+    with output:
+        numeric_cols = df.select_dtypes(include=np.number).columns
+        df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
+        X = df[['MONTH_OF_SALE', 'YEAR_OF_SALE__CALENDAR_']]
+        y = df['ACTUAL_PRICE_AT_POINT_OF_SALE']
+        X = sm.add_constant(X)
+        model = sm.OLS(y, X)
+        results = model.fit()
+        print(results.summary())
+        plt.figure(figsize=(10, 8))
+        plt.scatter(df['MONTH_OF_SALE'], y, color='blue', label='Actual')
+        plt.plot(df['MONTH_OF_SALE'], results.predict(), color='red', linewidth=2, label='Predicted')
+        plt.title('Linear Regression')
+        plt.xlabel('Month of Sale')
+        plt.ylabel('Actual Price')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+def temporal_analysis(b):
+    output.clear_output()
+    with output:
+        df['MONTH_OF_SALE'] = pd.to_numeric(df['MONTH_OF_SALE'], errors='coerce')
+        df['YEAR_OF_SALE__CALENDAR_'] = pd.to_numeric(df['YEAR_OF_SALE__CALENDAR_'], errors='coerce')
+        df.dropna(subset=['MONTH_OF_SALE', 'YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE'], inplace=True)
+        df['DATE_OF_SALE'] = pd.to_datetime(df['MONTH_OF_SALE'].astype(int).astype(str) + '-' + df['YEAR_OF_SALE__CALENDAR_'].astype(int).astype(str), format='%m-%Y')
+        df.sort_values(by='DATE_OF_SALE', inplace=True)
+        average_price = df.groupby('DATE_OF_SALE')['ACTUAL_PRICE_AT_POINT_OF_SALE'].mean()
+        result = seasonal_decompose(average_price, model='additive', period=12)
+        avg_price_mean = average_price.mean()
+        avg_price_median = average_price.median()
+        avg_price_std = average_price.std()
+        print("Summary of Temporal Analysis:")
+        print(f"Average price mean: {avg_price_mean}")
+        print(f"Average price median: {avg_price_median}")
+        print(f"Average price standard deviation: {avg_price_std}")
+        plt.figure(figsize=(12, 8))
+        plt.subplot(411)
+        plt.plot(average_price, label='Average Price')
+        plt.title('Average House Price Over Time')
+        plt.legend()
+        plt.subplot(412)
+        plt.plot(result.trend, label='Trend')
+        plt.title('Trend Component')
+        plt.legend()
+        plt.subplot(413)
+        plt.plot(result.seasonal, label='Seasonal')
+        plt.title('Seasonal Component')
+        plt.legend()
+        plt.subplot(414)
+        plt.plot(result.resid, label='Residual')
+        plt.title('Residual Component')
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+def price_trend_analysis(b):
+    output.clear_output()
+    with output:
+        df['MONTH_OF_SALE'] = pd.to_numeric(df['MONTH_OF_SALE'], errors='coerce')
+        df['YEAR_OF_SALE__CALENDAR_'] = pd.to_numeric(df['YEAR_OF_SALE__CALENDAR_'], errors='coerce')
+        df.dropna(subset=['MONTH_OF_SALE', 'YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE'], inplace=True)
+        df['DATE_OF_SALE'] = pd.to_datetime(df['MONTH_OF_SALE'].astype(int).astype(str) + '-' + df['YEAR_OF_SALE__CALENDAR_'].astype(int).astype(str), format='%m-%Y')
+        df['YEAR'] = df['DATE_OF_SALE'].dt.year
+        average_prices_by_year = df.groupby('YEAR')['ACTUAL_PRICE_AT_POINT_OF_SALE'].mean()
+        plt.figure(figsize=(12, 6))
+        plt.plot(average_prices_by_year.index, average_prices_by_year.values, marker='o', linestyle='-', color='b')
+        plt.title('Average House Price Trend (1991-2013)')
+        plt.xlabel('Year')
+        plt.ylabel('Average Price')
+        plt.grid(True)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+        mean_price = average_prices_by_year.mean()
+        median_price = average_prices_by_year.median()
+        std_dev_price = average_prices_by_year.std()
+        print(f"Mean Price: {mean_price}")
+        print(f"Median Price: {median_price}")
+        print(f"Standard Deviation: {std_dev_price}")
+
+def visualize_data(b):
+    output.clear_output()
+
+    # Check if the DataFrame is empty
+    if df.empty:
+        print("DataFrame is empty. No data to visualize.")
+        return
+
+    # Histogram of Actual Price at Point of Sale
+    if 'ACTUAL_PRICE_AT_POINT_OF_SALE' in df.columns and not df['ACTUAL_PRICE_AT_POINT_OF_SALE'].empty:
+        plt.figure(figsize=(10, 6))
+        sns.histplot(df['ACTUAL_PRICE_AT_POINT_OF_SALE'], bins=30, kde=True, color='blue')
+        plt.title('Histogram of Actual Price at Point of Sale')
+        plt.xlabel('Price')
+        plt.ylabel('Frequency')
+        plt.grid(True)
+        plt.show()
+    else:
+        print("Column 'ACTUAL_PRICE_AT_POINT_OF_SALE' is missing or empty. Skipping histogram plot.")
+
+    # Box plot of Price by Year of Sale
+    if {'YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE'}.issubset(df.columns) and not df[['YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE']].dropna().empty:
+        plt.figure(figsize=(12, 8))
+        sns.boxplot(x='YEAR_OF_SALE__CALENDAR_', y='ACTUAL_PRICE_AT_POINT_OF_SALE', data=df, palette='Set2')
+        plt.title('Box plot of Price by Year of Sale')
+        plt.xlabel('Year of Sale')
+        plt.ylabel('Price')
+        plt.xticks(rotation=45)
+        plt.grid(True)
+        plt.show()
+    else:
+        print("Columns 'YEAR_OF_SALE__CALENDAR_' or 'ACTUAL_PRICE_AT_POINT_OF_SALE' are missing or empty. Skipping box plot.")
+
+    # Scatter plot of Price against RPI (Retail Price Index)
+    if {'RPI', 'ACTUAL_PRICE_AT_POINT_OF_SALE'}.issubset(df.columns) and not df[['RPI', 'ACTUAL_PRICE_AT_POINT_OF_SALE']].dropna().empty:
+        plt.figure(figsize=(10, 6))
+        sns.scatterplot(x='RPI', y='ACTUAL_PRICE_AT_POINT_OF_SALE', data=df, alpha=0.7, color='green')
+        plt.title('Scatter plot of Price against RPI')
+        plt.xlabel('RPI')
+        plt.ylabel('Price')
+        plt.grid(True)
+        plt.show()
+    else:
+        print("Columns 'RPI' or 'ACTUAL_PRICE_AT_POINT_OF_SALE' are missing or empty. Skipping scatter plot.")
+
+    # Bar chart of counts by house class
+    if 'CLASS' in df.columns and not df['CLASS'].dropna().empty:
+        class_counts = df['CLASS'].value_counts()
+        plt.figure(figsize=(10, 6))
+        class_counts.plot(kind='bar', color='skyblue')
+        plt.title('Count of Houses by Class')
+        plt.xlabel('House Class')
+        plt.ylabel('Count')
+        plt.grid(axis='y')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("Column 'CLASS' is missing or empty. Skipping bar chart.")
+
+    # Bar chart of number of sales per year
+    if 'YEAR_OF_SALE__CALENDAR_' in df.columns and not df['YEAR_OF_SALE__CALENDAR_'].dropna().empty:
+        sales_per_year = df['YEAR_OF_SALE__CALENDAR_'].value_counts().sort_index()
+        plt.figure(figsize=(12, 6))
+        plt.bar(sales_per_year.index, sales_per_year.values, color='salmon')
+        plt.title('Number of House Sales per Year')
+        plt.xlabel('Year')
+        plt.ylabel('Number of Sales')
+        plt.grid(axis='y')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("Column 'YEAR_OF_SALE__CALENDAR_' is missing or empty. Skipping bar chart of sales per year.")
+
+    # Line graph of mean price by year
+    if {'YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE'}.issubset(df.columns) and not df[['YEAR_OF_SALE__CALENDAR_', 'ACTUAL_PRICE_AT_POINT_OF_SALE']].dropna().empty:
+        mean_price_by_year = df.groupby('YEAR_OF_SALE__CALENDAR_')['ACTUAL_PRICE_AT_POINT_OF_SALE'].mean()
+        plt.figure(figsize=(10, 6))
+        plt.plot(mean_price_by_year.index, mean_price_by_year.values, marker='o', linestyle='-')
+        plt.title('Mean Price of Houses by Year')
+        plt.xlabel('Year')
+        plt.ylabel('Mean Price')
+        plt.grid(True)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("Columns 'YEAR_OF_SALE__CALENDAR_' or 'ACTUAL_PRICE_AT_POINT_OF_SALE' are missing or empty. Skipping mean price line graph.")
+
+def close_output(b):
+    output.clear_output()
+
+# Assign actions to buttons
+clean_data_button.on_click(clean_data)
+summary_statistics_button.on_click(display_summary_statistics)
+spatial_analysis_button.on_click(spatial_analysis)
+regression_analysis_button.on_click(regression_analysis)
+temporal_analysis_button.on_click(temporal_analysis)
+price_trend_analysis_button.on_click(price_trend_analysis)
+visualize_data_button.on_click(visualize_data)
+
+
+# Display buttons and output
+button_box = widgets.HBox([clean_data_button, summary_statistics_button, spatial_analysis_button,
+                           regression_analysis_button, temporal_analysis_button, price_trend_analysis_button, visualize_data_button])
+display(button_box)
+display(output)
